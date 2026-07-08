@@ -70,7 +70,7 @@ TARGET_CATEGORY_URL=https://forum.trae.cn/c/38-category/40-category/40
 MAX_COMMENTS_PER_RUN=5
 ```
 
-> **注意**：`.env` 文件包含敏感信息，**请勿上传到 GitHub**。项目已配置 `.gitignore` 自动忽略此文件。
+
 
 ### 3. 配置黑名单（可选）
 
@@ -78,7 +78,7 @@ MAX_COMMENTS_PER_RUN=5
 
 ```json
 {
-  "skip_topic_ids": [22549, 21487]
+  "skip_topic_ids": [xxxxx]
 }
 ```
 
@@ -86,7 +86,7 @@ MAX_COMMENTS_PER_RUN=5
 
 ```json
 {
-  "blacklisted_usernames": ["用户64375"]
+  "blacklisted_usernames": ["用户xxxxx"]
 }
 ```
 
