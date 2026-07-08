@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.log
+.DS_Store
+
+# 数据文件（不上传，使用 .example 副本）
+state.json
+skip_list.json
+user_blacklist.json
