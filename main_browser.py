@@ -237,6 +237,24 @@ def check_vote_status(driver):
         return ""
 
 
+def check_logged_in(driver):
+    selectors = [
+        "#current-user",
+        ".current-user",
+        ".header-dropdown-toggle.current-user",
+        "a[data-user-card]",
+        ".user-dropdown",
+    ]
+    for selector in selectors:
+        try:
+            element = driver.find_element(By.CSS_SELECTOR, selector)
+            if element.is_displayed():
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def main():
     os.makedirs("logs", exist_ok=True)
     logging.basicConfig(
@@ -280,15 +298,25 @@ def main():
         driver.get(config.target_category_url)
         time.sleep(3)
 
-        log_print("[3/5] 请在接下来的 60 秒内完成登录...")
+        log_print("[3/5] 请登录您的账号（检测到登录后自动继续，最多等待120秒）...")
         print("=" * 50)
-        print("倒计时开始，请在浏览器中登录您的账号")
+        print("请在浏览器中完成登录")
+        print("登录成功后将自动继续，无需手动确认")
         print("=" * 50)
-        for i in range(60, 0, -1):
-            print(f"\r剩余时间: {i} 秒", end="")
-            time.sleep(1)
-        print("\n" + "=" * 50)
-        log_print("登录时间结束，继续执行...")
+        logged_in = False
+        for elapsed in range(0, 121, 2):
+            if check_logged_in(driver):
+                logged_in = True
+                break
+            remaining = 120 - elapsed
+            print(f"\r等待登录中... 剩余 {remaining} 秒", end="")
+            time.sleep(2)
+        print()
+        print("=" * 50)
+        if logged_in:
+            log_print("检测到登录成功，继续执行...")
+        else:
+            log_print("登录等待超时，继续执行...")
         print("=" * 50)
 
         driver.refresh()
