@@ -71,8 +71,6 @@ def start_edge_with_debug(port: int):
         [
             edge_path,
             "--start-maximized",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
             f"--remote-debugging-port={port}",
             "--user-data-dir=" + os.path.join(os.path.dirname(__file__), "edge_profile"),
         ],
