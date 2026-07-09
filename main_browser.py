@@ -130,18 +130,14 @@ def perform_vote(driver, topic_id):
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".vote-button"))
         )
         button_text = vote_button.text.strip()
-        print(f"  [投票] 找到投票按钮: '{button_text}'")
 
         if "已关闭" in button_text:
-            print(f"  [投票] 投票已关闭，跳过")
             return False
         elif "已投票" not in button_text:
             vote_button.click()
-            print("  [投票] 点击投票按钮")
             time.sleep(2)
             return True
         else:
-            print("  [投票] 已投票，跳过")
             return True
     except Exception as e:
         print(f"  [投票] 失败: {e}")
@@ -154,7 +150,6 @@ def perform_comment(driver, comment):
             EC.element_to_be_clickable((By.CSS_SELECTOR, ".reply"))
         )
         reply_button.click()
-        print("  [评论] 点击回复按钮成功")
 
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".ProseMirror"))
@@ -164,7 +159,6 @@ def perform_comment(driver, comment):
         driver.execute_script(
             f"document.querySelector('.ProseMirror').innerHTML = '<p>' + {safe_comment} + '</p>';"
         )
-        print(f"  [评论] 输入评论内容: {comment[:30]}...")
 
         time.sleep(1)
 
@@ -172,7 +166,6 @@ def perform_comment(driver, comment):
             EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn-primary.create:not(.topic-footer-button)"))
         )
         submit_button.click()
-        print("  [评论] 点击回复按钮提交")
 
         time.sleep(3)
 
@@ -181,9 +174,8 @@ def perform_comment(driver, comment):
                 EC.element_to_be_clickable((By.CSS_SELECTOR, ".modal button.btn-primary"))
             )
             confirm_btn.click()
-            print("  [评论] 点击审批弹窗确定按钮")
         except Exception:
-            print("  [评论] 未出现审批弹窗")
+            pass
 
         return True
     except Exception as e:
@@ -345,21 +337,16 @@ def main():
         processed += 1
 
         if skip_list.is_skipped(topic_id):
-            print(f"[{processed}] 主题 {topic_id} - 帖子黑名单跳过")
             skip_blacklist_count += 1
             continue
 
         if state.has_commented(topic_id):
-            print(f"[{processed}] 主题 {topic_id} - 已评价跳过")
             skip_commented_count += 1
             continue
 
         if topic_poster and user_blacklist.is_blacklisted(topic_poster):
-            print(f"[{processed}] 主题 {topic_id} - 用户黑名单跳过 ({topic_poster})")
             skip_user_blacklist_count += 1
             continue
-
-        print(f"\n[{processed}] 主题 {topic_id} - {title[:30]}...")
 
         try:
             topic_url = f"https://forum.trae.cn/t/topic/{topic_id}"
@@ -371,14 +358,10 @@ def main():
             if not author:
                 author = topic_poster
 
-            print(f"  [用户] 发帖人: {author}")
-
             if "已投票" in vote_status or "已关闭" in vote_status:
-                print(f"  [投票] 跳过帖子 ({vote_status})")
                 skip_already_voted_count += 1
                 if author:
                     user_blacklist.add(author)
-                    print(f"  [用户] 已将 {author} 加入用户黑名单")
                 continue
 
             vote_success = perform_vote(driver, topic_id)
@@ -387,10 +370,7 @@ def main():
             if not page_title:
                 page_title = title
 
-            print(f"  [内容] 标题: {page_title[:30]}...")
-
             comment = generator.generate(page_title, body_text)
-            print(f"  [内容] 生成评论: {comment}")
 
             comment_success = perform_comment(driver, comment)
 
@@ -399,17 +379,20 @@ def main():
                 success_count += 1
                 if author:
                     user_blacklist.add(author)
-                    print(f"  [用户] 已将 {author} 加入用户黑名单")
-                print(f"  [结果] 处理成功")
+                print(f"[OK] 主题 {topic_id}")
             else:
+                print(f"\n[FAIL] 主题 {topic_id} - {title[:30]}...")
+                print(f"  [用户] 发帖人: {author}")
+                print(f"  [投票] 状态: {'成功' if vote_success else '失败'}")
+                print(f"  [评论] 状态: {'成功' if comment_success else '失败'}")
                 print(f"  [结果] 处理失败")
 
         except Exception as e:
-            print(f"[{processed}] 主题 {topic_id} - 处理异常: {e}")
+            print(f"\n[ERROR] 主题 {topic_id} - {title[:30]}...")
+            print(f"  [错误] {e}")
             continue
 
         delay = random.uniform(3, 5)
-        print(f"  [等待] 等待 {delay:.1f} 秒...")
         time.sleep(delay)
 
     total_pages = page + 1 if 'page' in locals() else 1
