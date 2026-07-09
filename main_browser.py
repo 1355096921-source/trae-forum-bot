@@ -3,7 +3,10 @@ import random
 import urllib.request
 import subprocess
 import os
+import json
 import shutil
+import logging
+from logging.handlers import RotatingFileHandler
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
@@ -154,7 +157,6 @@ def perform_comment(driver, comment):
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".ProseMirror"))
         )
-        import json
         safe_comment = json.dumps(comment)
         driver.execute_script(
             f"document.querySelector('.ProseMirror').innerHTML = '<p>' + {safe_comment} + '</p>';"
@@ -236,35 +238,49 @@ def check_vote_status(driver):
 
 
 def main():
-    print("=" * 50)
-    print("论坛自动化评论任务 - 浏览器模式")
-    print("=" * 50)
-    print(f"目标分类: {config.target_category_url}")
-    print(f"最大评论数: {config.max_comments_per_run}")
+    os.makedirs("logs", exist_ok=True)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            RotatingFileHandler("logs/automation.log", maxBytes=5*1024*1024, backupCount=3, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+    )
+
+    def log_print(msg):
+        print(msg)
+        logging.info(msg)
+
+    log_print("=" * 50)
+    log_print("论坛自动化评论任务 - 浏览器模式")
+    log_print("=" * 50)
+    log_print(f"目标分类: {config.target_category_url}")
+    log_print(f"最大评论数: {config.max_comments_per_run}")
 
     state = StateManager()
     skip_list = SkipListManager()
     user_blacklist = UserBlacklistManager()
-    print(f"已评价记录: {len(state._commented_ids)} 条")
-    print(f"帖子黑名单: {len(skip_list.skip_ids)} 条")
-    print(f"用户黑名单: {len(user_blacklist.blacklisted_usernames)} 条")
-    print("-" * 50)
+    log_print(f"已评价记录: {len(state._commented_ids)} 条")
+    log_print(f"帖子黑名单: {len(skip_list.skip_ids)} 条")
+    log_print(f"用户黑名单: {len(user_blacklist.blacklisted_usernames)} 条")
+    log_print("-" * 50)
 
-    print("\n[1/5] 启动 Edge 浏览器...")
+    log_print("\n[1/5] 启动 Edge 浏览器...")
     DEBUG_PORT = 9222
     try:
         driver, is_reused = get_or_create_driver(debug_port=DEBUG_PORT)
     except Exception as e:
-        print(f"浏览器启动失败: {e}")
-        print("请确保 Edge 浏览器已安装，且版本与 Selenium 兼容")
+        log_print(f"浏览器启动失败: {e}")
+        log_print("请确保 Edge 浏览器已安装，且版本与 Selenium 兼容")
         return
 
     if not is_reused:
-        print("[2/5] 访问帖子页面...")
+        log_print("[2/5] 访问帖子页面...")
         driver.get(config.target_category_url)
         time.sleep(3)
 
-        print("[3/5] 请在接下来的 60 秒内完成登录...")
+        log_print("[3/5] 请在接下来的 60 秒内完成登录...")
         print("=" * 50)
         print("倒计时开始，请在浏览器中登录您的账号")
         print("=" * 50)
@@ -272,19 +288,19 @@ def main():
             print(f"\r剩余时间: {i} 秒", end="")
             time.sleep(1)
         print("\n" + "=" * 50)
-        print("登录时间结束，继续执行...")
+        log_print("登录时间结束，继续执行...")
         print("=" * 50)
 
         driver.refresh()
         time.sleep(3)
     else:
-        print("[2/5] 复用已有浏览器，跳过登录步骤")
+        log_print("[2/5] 复用已有浏览器，跳过登录步骤")
         driver.get(config.target_category_url)
         time.sleep(3)
 
-    print("[4/5] 获取帖子列表...")
+    log_print("[4/5] 获取帖子列表...")
     try:
-        discourse = DiscourseClient({})
+        discourse = DiscourseClient({}, base_url=config.discourse_base_url)
         all_topics = []
         page = 0
         while True:
@@ -292,22 +308,20 @@ def main():
             if not topics:
                 break
             all_topics.extend(topics)
-            # 如果本页返回的帖子数 < 30，说明是最后一页
             if len(topics) < 30:
                 break
-            # 如果已获取足够多（max + 20 缓冲），停止翻页
             if len(all_topics) >= config.max_comments_per_run + 20:
                 break
             page += 1
 
         if not all_topics:
-            print("未获取到任何主题，任务结束")
+            log_print("未获取到任何主题，任务结束")
             if not is_reused:
                 driver.quit()
             return
-        print(f"获取到 {len(all_topics)} 个主题（共 {page + 1} 页）")
+        log_print(f"获取到 {len(all_topics)} 个主题（共 {page + 1} 页）")
     except Exception as e:
-        print(f"获取帖子列表失败: {e}")
+        log_print(f"获取帖子列表失败: {e}")
         if not is_reused:
             driver.quit()
         return
@@ -322,10 +336,10 @@ def main():
     skip_already_voted_count = 0
     processed = 0
 
-    print("[5/5] 开始处理帖子...")
+    log_print("[5/5] 开始处理帖子...")
     for topic in all_topics:
         if success_count >= config.max_comments_per_run:
-            print(f"\n已达本次最大评论数上限 ({config.max_comments_per_run})，任务终止")
+            log_print(f"\n已达本次最大评论数上限 ({config.max_comments_per_run})，任务终止")
             break
 
         topic_id = topic.get("id")
@@ -379,16 +393,18 @@ def main():
                 success_count += 1
                 if author:
                     user_blacklist.add(author)
-                print(f"[OK] 主题 {topic_id}")
+                log_print(f"[OK] 主题 {topic_id}")
             else:
-                print(f"\n[FAIL] 主题 {topic_id} - {title[:30]}...")
+                msg = f"[FAIL] 主题 {topic_id} - {title[:30]}..."
+                log_print(msg)
                 print(f"  [用户] 发帖人: {author}")
                 print(f"  [投票] 状态: {'成功' if vote_success else '失败'}")
                 print(f"  [评论] 状态: {'成功' if comment_success else '失败'}")
                 print(f"  [结果] 处理失败")
 
         except Exception as e:
-            print(f"\n[ERROR] 主题 {topic_id} - {title[:30]}...")
+            msg = f"[ERROR] 主题 {topic_id} - {title[:30]}..."
+            log_print(msg)
             print(f"  [错误] {e}")
             continue
 
@@ -396,23 +412,23 @@ def main():
         time.sleep(delay)
 
     total_pages = page + 1 if 'page' in locals() else 1
-    print("\n" + "-" * 50)
-    print("执行摘要:")
-    print(f"  获取主题总数: {len(all_topics)}（{total_pages} 页）")
-    print(f"  共处理主题: {processed}")
-    print(f"  处理成功: {success_count}")
-    print(f"  已评价跳过: {skip_commented_count}")
-    print(f"  帖子黑名单跳过: {skip_blacklist_count}")
-    print(f"  用户黑名单跳过: {skip_user_blacklist_count}")
-    print(f"  已投票跳过: {skip_already_voted_count}")
-    print("=" * 50)
+    log_print("\n" + "-" * 50)
+    log_print("执行摘要:")
+    log_print(f"  获取主题总数: {len(all_topics)}（{total_pages} 页）")
+    log_print(f"  共处理主题: {processed}")
+    log_print(f"  处理成功: {success_count}")
+    log_print(f"  已评价跳过: {skip_commented_count}")
+    log_print(f"  帖子黑名单跳过: {skip_blacklist_count}")
+    log_print(f"  用户黑名单跳过: {skip_user_blacklist_count}")
+    log_print(f"  已投票跳过: {skip_already_voted_count}")
+    log_print("=" * 50)
 
-    print("\n任务完成！")
+    log_print("\n任务完成！")
     if is_reused:
-        print("浏览器继续保留，您可以再次运行脚本复用。")
+        log_print("浏览器继续保留，您可以再次运行脚本复用。")
     else:
-        print("浏览器已保留（请勿关闭窗口，以便下次复用）。")
-        print("如需关闭，请手动关闭浏览器窗口。")
+        log_print("浏览器已保留（请勿关闭窗口，以便下次复用）。")
+        log_print("如需关闭，请手动关闭浏览器窗口。")
 
 
 if __name__ == "__main__":
