@@ -155,9 +155,14 @@ def perform_comment(driver, comment):
         reply_button.click()
         print("  [评论] 点击回复按钮成功")
 
-        time.sleep(3)
-
-        driver.execute_script(f"document.querySelector('.ProseMirror').innerHTML = '<p>{comment}</p>';")
+        WebDriverWait(driver, 15).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".ProseMirror"))
+        )
+        import json
+        safe_comment = json.dumps(comment)
+        driver.execute_script(
+            f"document.querySelector('.ProseMirror').innerHTML = '<p>' + {safe_comment} + '</p>';"
+        )
         print(f"  [评论] 输入评论内容: {comment[:30]}...")
 
         time.sleep(1)
