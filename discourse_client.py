@@ -16,8 +16,8 @@ class DiscourseClient:
         self.session.headers.update(HEADERS)
         self.session.cookies.update(cookies)
 
-    def get_latest_topics(self, category_slug: str, category_id: str) -> List[Dict[str, Any]]:
-        url = f"{BASE_URL}/c/{category_slug}/{category_id}/l/latest.json"
+    def get_latest_topics(self, category_slug: str, category_id: str, page: int = 0) -> List[Dict[str, Any]]:
+        url = f"{BASE_URL}/c/{category_slug}/{category_id}/l/latest.json?page={page}"
         response = self.session.get(url, timeout=30)
         self._check_response(response)
         data = response.json()

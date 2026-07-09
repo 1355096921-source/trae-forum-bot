@@ -1,5 +1,9 @@
 import time
 import random
+import urllib.request
+import subprocess
+import os
+import shutil
 from selenium import webdriver
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
@@ -13,6 +17,113 @@ from state_manager import StateManager
 from skip_list_manager import SkipListManager
 from user_blacklist_manager import UserBlacklistManager
 from discourse_client import DiscourseClient
+
+
+def is_debug_port_available(port: int, timeout: float = 3.0) -> bool:
+    """
+    检测指定端口是否真的有 Edge DevTools 协议服务在运行。
+    通过访问 /json/version 接口验证，避免 Selenium 盲目连接导致挂起。
+    """
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/json/version", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def find_edge_executable():
+    """
+    查找 Edge 浏览器可执行文件路径。
+    优先查找正式版，其次是 Dev/Canary 版。
+    """
+    edge_paths = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        os.path.expanduser(r"~\AppData\Local\Microsoft\Edge\Application\msedge.exe"),
+        r"C:\Program Files (x86)\Microsoft\Edge Dev\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge Dev\Application\msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge Canary\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge Canary\Application\msedge.exe",
+    ]
+    for path in edge_paths:
+        if os.path.exists(path):
+            return path
+
+    edge_found = shutil.which("msedge")
+    if edge_found:
+        return edge_found
+
+    return None
+
+
+def start_edge_with_debug(port: int):
+    """
+    通过 subprocess 直接启动 Edge 浏览器（不通过 Selenium），开启 remote debugging。
+    这样启动的浏览器进程独立于 Python，Python 退出后浏览器不会关闭。
+    """
+    edge_path = find_edge_executable()
+    if not edge_path:
+        raise RuntimeError("未找到 Edge 浏览器可执行文件，请确保 Edge 已安装")
+
+    print(f"[浏览器] 通过 subprocess 启动 Edge: {edge_path}")
+    subprocess.Popen(
+        [
+            edge_path,
+            "--start-maximized",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            f"--remote-debugging-port={port}",
+            "--user-data-dir=" + os.path.join(os.path.dirname(__file__), "edge_profile"),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    print(f"[浏览器] 等待 DevTools 服务启动...")
+    for _ in range(30):
+        if is_debug_port_available(port):
+            print(f"[浏览器] DevTools 服务已启动")
+            return
+        time.sleep(1)
+    raise RuntimeError(f"等待 DevTools 服务启动超时 (端口 {port})")
+
+
+def get_or_create_driver(debug_port: int = 9222):
+    """
+    尝试连接已有浏览器（通过 remote debugging port）。
+    如果失败，则通过 subprocess 启动新浏览器（独立进程），再连接。
+    返回 (driver, is_reused)。
+    """
+    if is_debug_port_available(debug_port):
+        try:
+            reconnect_options = Options()
+            reconnect_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+            driver = webdriver.Edge(options=reconnect_options)
+            print(f"[浏览器] 成功复用已有浏览器 (端口 {debug_port})")
+            return driver, True
+        except Exception as e:
+            print(f"[浏览器] 端口可用但连接失败: {e}，将启动新浏览器")
+
+    print(f"[浏览器] 未检测到可用浏览器，启动新实例...")
+    start_edge_with_debug(debug_port)
+
+    reconnect_options = Options()
+    reconnect_options.add_experimental_option("debuggerAddress", f"127.0.0.1:{debug_port}")
+    try:
+        driver = webdriver.Edge(options=reconnect_options)
+    except Exception as e:
+        print(f"连接浏览器失败: {e}")
+        from selenium.webdriver.edge.service import Service
+        try:
+            service = Service()
+            driver = webdriver.Edge(service=service, options=reconnect_options)
+        except Exception as e2:
+            print(f"再次失败: {e2}")
+            raise
+
+    return driver, False
 
 
 def perform_vote(driver, topic_id):
@@ -91,25 +202,33 @@ def get_topic_content(driver):
 
 
 def get_topic_author(driver):
-    try:
-        author_element = driver.find_element(By.CSS_SELECTOR, ".topic-meta-data .names .username a")
-        username = author_element.text.strip()
-        return username
-    except Exception:
+    selectors = [
+        (".topic-meta-data .names .username a", "text"),
+        (".topic-body a[data-user-card]", "data-user-card"),
+        (".topic-post .username a", "text"),
+        (".names .username a", "text"),
+        ("a[data-user-card]", "data-user-card"),
+    ]
+    for selector, attr in selectors:
         try:
-            author_link = driver.find_element(By.CSS_SELECTOR, ".topic-body a[data-user-card]")
-            username = author_link.get_attribute("data-user-card")
+            element = driver.find_element(By.CSS_SELECTOR, selector)
+            if attr == "text":
+                username = element.text.strip()
+            else:
+                username = element.get_attribute(attr)
             if username:
                 return username.strip()
         except Exception:
-            pass
-        return ""
+            continue
+    return ""
 
 
 def check_vote_status(driver):
     try:
+        # 使用 presence_of_element_located 而不是 element_to_be_clickable
+        # 因为 "已投票" 状态的按钮可能是 disabled 的，element_to_be_clickable 会超时
         vote_button = WebDriverWait(driver, 15).until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, ".vote-button"))
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".vote-button"))
         )
         button_text = vote_button.text.strip()
         return button_text
@@ -133,56 +252,66 @@ def main():
     print(f"用户黑名单: {len(user_blacklist.blacklisted_usernames)} 条")
     print("-" * 50)
 
-    edge_options = Options()
-    edge_options.add_argument("--start-maximized")
-    edge_options.add_argument("--no-sandbox")
-    edge_options.add_argument("--disable-dev-shm-usage")
-
     print("\n[1/5] 启动 Edge 浏览器...")
+    DEBUG_PORT = 9222
     try:
-        driver = webdriver.Edge(options=edge_options)
+        driver, is_reused = get_or_create_driver(debug_port=DEBUG_PORT)
     except Exception as e:
-        print(f"启动失败: {e}")
-        print("尝试使用 Edge 驱动服务...")
-        from selenium.webdriver.edge.service import Service
-        try:
-            service = Service()
-            driver = webdriver.Edge(service=service, options=edge_options)
-        except Exception as e2:
-            print(f"再次失败: {e2}")
-            print("请确保 Edge 浏览器已安装，且版本与 Selenium 兼容")
-            return
+        print(f"浏览器启动失败: {e}")
+        print("请确保 Edge 浏览器已安装，且版本与 Selenium 兼容")
+        return
 
-    print("[2/5] 访问帖子页面...")
-    driver.get(config.target_category_url)
-    time.sleep(3)
+    if not is_reused:
+        print("[2/5] 访问帖子页面...")
+        driver.get(config.target_category_url)
+        time.sleep(3)
 
-    print("[3/5] 请在接下来的 60 秒内完成登录...")
-    print("=" * 50)
-    print("倒计时开始，请在浏览器中登录您的账号")
-    print("=" * 50)
-    for i in range(60, 0, -1):
-        print(f"\r剩余时间: {i} 秒", end="")
-        time.sleep(1)
-    print("\n" + "=" * 50)
-    print("登录时间结束，继续执行...")
-    print("=" * 50)
+        print("[3/5] 请在接下来的 60 秒内完成登录...")
+        print("=" * 50)
+        print("倒计时开始，请在浏览器中登录您的账号")
+        print("=" * 50)
+        for i in range(60, 0, -1):
+            print(f"\r剩余时间: {i} 秒", end="")
+            time.sleep(1)
+        print("\n" + "=" * 50)
+        print("登录时间结束，继续执行...")
+        print("=" * 50)
 
-    driver.refresh()
-    time.sleep(3)
+        driver.refresh()
+        time.sleep(3)
+    else:
+        print("[2/5] 复用已有浏览器，跳过登录步骤")
+        driver.get(config.target_category_url)
+        time.sleep(3)
 
     print("[4/5] 获取帖子列表...")
     try:
         discourse = DiscourseClient({})
-        topics = discourse.get_latest_topics(config.category_slug, config.category_id)
-        if not topics:
+        all_topics = []
+        page = 0
+        while True:
+            topics = discourse.get_latest_topics(config.category_slug, config.category_id, page=page)
+            if not topics:
+                break
+            all_topics.extend(topics)
+            # 如果本页返回的帖子数 < 30，说明是最后一页
+            if len(topics) < 30:
+                break
+            # 如果已获取足够多（max + 20 缓冲），停止翻页
+            if len(all_topics) >= config.max_comments_per_run + 20:
+                break
+            page += 1
+
+        if not all_topics:
             print("未获取到任何主题，任务结束")
-            driver.quit()
+            if not is_reused:
+                driver.quit()
             return
-        print(f"获取到 {len(topics)} 个主题")
+        print(f"获取到 {len(all_topics)} 个主题（共 {page + 1} 页）")
     except Exception as e:
         print(f"获取帖子列表失败: {e}")
-        driver.quit()
+        if not is_reused:
+            driver.quit()
         return
 
     deepseek = DeepSeekClient(config.deepseek_api_key, config.deepseek_base_url, config.deepseek_model)
@@ -196,7 +325,7 @@ def main():
     processed = 0
 
     print("[5/5] 开始处理帖子...")
-    for topic in topics:
+    for topic in all_topics:
         if success_count >= config.max_comments_per_run:
             print(f"\n已达本次最大评论数上限 ({config.max_comments_per_run})，任务终止")
             break
@@ -277,8 +406,10 @@ def main():
         print(f"  [等待] 等待 {delay:.1f} 秒...")
         time.sleep(delay)
 
+    total_pages = page + 1 if 'page' in locals() else 1
     print("\n" + "-" * 50)
     print("执行摘要:")
+    print(f"  获取主题总数: {len(all_topics)}（{total_pages} 页）")
     print(f"  共处理主题: {processed}")
     print(f"  处理成功: {success_count}")
     print(f"  已评价跳过: {skip_commented_count}")
@@ -287,10 +418,12 @@ def main():
     print(f"  已投票跳过: {skip_already_voted_count}")
     print("=" * 50)
 
-    print("\n任务完成！浏览器已保留，您可以继续使用。")
-    print("按回车键关闭浏览器并退出...")
-    input()
-    driver.quit()
+    print("\n任务完成！")
+    if is_reused:
+        print("浏览器继续保留，您可以再次运行脚本复用。")
+    else:
+        print("浏览器已保留（请勿关闭窗口，以便下次复用）。")
+        print("如需关闭，请手动关闭浏览器窗口。")
 
 
 if __name__ == "__main__":

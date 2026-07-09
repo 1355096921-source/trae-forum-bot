@@ -12,3 +12,9 @@ build/
 state.json
 skip_list.json
 user_blacklist.json
+
+# Edge 浏览器配置文件
+edge_profile/
+
+# TRAE 工具配置
+.trae/

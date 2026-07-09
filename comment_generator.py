@@ -58,6 +58,12 @@ class CommentGenerator:
                     cleaned += "。"
         if not cleaned.startswith("已投票"):
             cleaned = "已投票" + cleaned[3:] if len(cleaned) > 3 else "已投票，很棒！"
+        if "相互支持" not in cleaned:
+            cleaned += "，相互支持"
+            if len(cleaned) > 50:
+                cleaned = cleaned[:50]
+                if not cleaned.endswith("。"):
+                    cleaned += "。"
         return cleaned
 
     @staticmethod
