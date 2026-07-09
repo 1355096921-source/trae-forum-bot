@@ -134,7 +134,10 @@ def perform_vote(driver, topic_id):
         button_text = vote_button.text.strip()
         print(f"  [投票] 找到投票按钮: '{button_text}'")
 
-        if "已投票" not in button_text:
+        if "已关闭" in button_text:
+            print(f"  [投票] 投票已关闭，跳过")
+            return False
+        elif "已投票" not in button_text:
             vote_button.click()
             print("  [投票] 点击投票按钮")
             time.sleep(2)
@@ -372,8 +375,8 @@ def main():
 
             print(f"  [用户] 发帖人: {author}")
 
-            if "已投票" in vote_status or "已投票" in vote_status:
-                print(f"  [投票] 已投票 ({vote_status})，跳过整个帖子")
+            if "已投票" in vote_status or "已关闭" in vote_status:
+                print(f"  [投票] 跳过帖子 ({vote_status})")
                 skip_already_voted_count += 1
                 if author:
                     user_blacklist.add(author)
