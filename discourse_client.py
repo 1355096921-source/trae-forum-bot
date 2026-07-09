@@ -9,12 +9,10 @@ HEADERS = {
 
 
 class DiscourseClient:
-    def __init__(self, cookies: Dict[str, str], base_url: str = "https://forum.trae.cn"):
-        self.cookies = cookies
+    def __init__(self, base_url: str = "https://forum.trae.cn"):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
-        self.session.cookies.update(cookies)
 
     def get_latest_topics(self, category_slug: str, category_id: str, page: int = 0) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/c/{category_slug}/{category_id}/l/latest.json?page={page}"

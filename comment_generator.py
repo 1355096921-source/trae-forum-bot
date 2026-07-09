@@ -1,4 +1,5 @@
 import re
+import random
 from deepseek_client import DeepSeekClient
 
 SYSTEM_PROMPT = (
@@ -38,10 +39,7 @@ class CommentGenerator:
         ]
         raw_comment = self.client.chat_completion(messages, temperature=0.7, max_tokens=100)
         cleaned = self._clean(raw_comment)
-        if len(cleaned) > 50:
-            cleaned = cleaned[:50]
-            if not cleaned.endswith("。"):
-                cleaned += "。"
+        cleaned = self._truncate_smart(cleaned, 50)
         if len(cleaned) < 15:
             suffixes = [
                 "，创意很棒，期待后续更新！",
@@ -50,21 +48,29 @@ class CommentGenerator:
                 "，期待看到更多细节！",
                 "，这个想法很有潜力！",
             ]
-            import random
             cleaned += random.choice(suffixes)
-            if len(cleaned) > 50:
-                cleaned = cleaned[:50]
-                if not cleaned.endswith("。"):
-                    cleaned += "。"
+            cleaned = self._truncate_smart(cleaned, 50)
         if not cleaned.startswith("已投票"):
             cleaned = "已投票" + cleaned[3:] if len(cleaned) > 3 else "已投票，很棒！"
         if "相互支持" not in cleaned:
             cleaned += "，相互支持"
-            if len(cleaned) > 50:
-                cleaned = cleaned[:50]
-                if not cleaned.endswith("。"):
-                    cleaned += "。"
+            cleaned = self._truncate_smart(cleaned, 50)
         return cleaned
+
+    @staticmethod
+    def _truncate_smart(text: str, max_len: int) -> str:
+        """智能截断：优先在标点符号处截断，避免在句子中间切断"""
+        if len(text) <= max_len:
+            return text
+        truncated = text[:max_len]
+        # 从截断位置往前找标点符号
+        for i in range(len(truncated) - 1, max(len(truncated) - 10, 0), -1):
+            if truncated[i] in "。，！？；、":
+                return truncated[:i + 1]
+        # 找不到标点就截断后补句号
+        if not truncated.endswith("。"):
+            truncated += "。"
+        return truncated
 
     @staticmethod
     def _clean(text: str) -> str:

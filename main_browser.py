@@ -300,7 +300,7 @@ def main():
 
     log_print("[4/5] 获取帖子列表...")
     try:
-        discourse = DiscourseClient({}, base_url=config.discourse_base_url)
+        discourse = DiscourseClient(base_url=config.discourse_base_url)
         all_topics = []
         page = 0
         while True:
@@ -363,7 +363,7 @@ def main():
             continue
 
         try:
-            topic_url = f"https://forum.trae.cn/t/topic/{topic_id}"
+            topic_url = f"{config.discourse_base_url}/t/topic/{topic_id}"
             driver.get(topic_url)
             time.sleep(5)
 

@@ -1,3 +1,5 @@
+# [DEPRECATED] 此文件为 API 模式入口，已废弃，请使用 main_browser.py
+# 浏览器模式（main_browser.py）已完全替代此文件的功能
 import time
 import random
 import html
@@ -14,7 +16,7 @@ def main():
     print("论坛自动化评论任务启动")
     print("=" * 50)
 
-    discourse = DiscourseClient(config.discourse_cookies)
+    discourse = DiscourseClient(base_url=config.discourse_base_url)
     deepseek = DeepSeekClient(config.deepseek_api_key, config.deepseek_base_url, config.deepseek_model)
     generator = CommentGenerator(deepseek)
     state = StateManager()
