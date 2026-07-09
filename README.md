@@ -15,6 +15,7 @@
 - **评论生成**：基于 DeepSeek API 自动生成评论，以"已投票"开头，末尾添加"相互支持"，字数控制在 15-50 字
 - **审批弹窗自动处理**：评论发布后自动点击审批确认按钮
 - **浏览器保留**：执行完毕后浏览器独立运行，不会自动关闭，下次运行可复用登录态
+- **Web 配置页面**：内置本地 Web 配置界面，无需手动编辑 .env 文件，启动后自动打开浏览器
 
 ## 项目结构
 
@@ -26,6 +27,8 @@
 │
 ├── main_browser.py       # 主脚本（浏览器模式，推荐使用）
 ├── main.py               # 主脚本（API 模式，Cookie 方式，已废弃）
+├── config_server.py      # 本地 Web 配置服务
+├── config.html           # 配置页面（Web UI）
 │
 ├── comment_generator.py  # 评论生成器（DeepSeek API）
 ├── config.py             # 配置管理
@@ -51,6 +54,22 @@ python -m pip install -r requirements.txt
 
 ### 2. 配置环境变量
 
+**方式一：Web 配置页面（推荐）**
+
+启动配置服务，浏览器会自动打开配置页面：
+
+```bash
+python config_server.py
+```
+
+在页面上修改配置后点击保存即可。默认端口为 8888，如需指定端口：
+
+```bash
+python config_server.py 9000
+```
+
+**方式二：手动编辑 .env 文件**
+
 复制 `.env.example` 为 `.env`，并填写您的配置：
 
 ```bash
@@ -64,6 +83,9 @@ cp .env.example .env
 DEEPSEEK_API_KEY=your_api_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 DEEPSEEK_MODEL=deepseek-v4-flash
+
+# Discourse 论坛配置
+DISCOURSE_BASE_URL=https://forum.trae.cn
 
 # 目标分类 URL（大赛初赛专区）
 TARGET_CATEGORY_URL=https://forum.trae.cn/c/38-category/40-category/40
@@ -116,6 +138,7 @@ python main_browser.py
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | `sk-...` |
 | `DEEPSEEK_BASE_URL` | DeepSeek API 地址 | `https://api.deepseek.com/v1` |
 | `DEEPSEEK_MODEL` | 模型名称 | `deepseek-v4-flash` |
+| `DISCOURSE_BASE_URL` | 论坛地址 | `https://forum.trae.cn` |
 | `TARGET_CATEGORY_URL` | 目标板块 URL | `https://forum.trae.cn/c/...` |
 | `MAX_COMMENTS_PER_RUN` | 单次最大处理数 | `5` |
 

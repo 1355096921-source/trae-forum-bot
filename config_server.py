@@ -2,6 +2,10 @@ import os
 import re
 import json
 import shutil
+import sys
+import time
+import webbrowser
+import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
@@ -112,9 +116,22 @@ class ConfigHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    server_address = ('127.0.0.1', 8080)
+    port = 8888
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+        except ValueError:
+            print(f'端口号无效: {sys.argv[1]}，使用默认端口 8888')
+    server_address = ('127.0.0.1', port)
     httpd = HTTPServer(server_address, ConfigHandler)
-    print('配置页面已启动: http://localhost:8080')
+    url = f'http://localhost:{port}'
+    print(f'配置页面已启动: {url}')
+
+    def _open_browser():
+        time.sleep(0.5)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_browser, daemon=True).start()
     httpd.serve_forever()
 
 
